@@ -12,9 +12,7 @@
 extern "C" void SSP0_IRQHandler(void);
 extern "C" void SSP1_IRQHandler(void);
 
-namespace HAL {
-namespace SPI {
-
+extern LogicalChannel logical_channels[];
 
 /* spi_channel vs.  hardware_channels :
  *   0: SW SPI       N/A
@@ -27,7 +25,6 @@ namespace SPI {
  * The pins and (if applicable) the Hardware Peripheral
  *
  */
-struct LogicalChannel; // who doesn't like circular dependencies
 
 struct HardwareChannel {
   LPC_SSP_TypeDef *peripheral;
