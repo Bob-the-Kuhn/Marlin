@@ -141,6 +141,9 @@ extern "C" void ssp_irq_handler(uint8_t hw_channel);
 #define HW_CHANNEL(chan) logical_channel[chan].spi_channel
 #define SHIFT_LEFT <<
 #define SHIFT_RIGHT >>
+#define LPC_PORT_OFFSET         (0x0020)
+#define LPC_PIN(pin)            (1UL << pin)
+#define LPC_GPIO(port)          ((volatile LPC_GPIO_TypeDef *)(LPC_GPIO0_BASE + LPC_PORT_OFFSET * port))
 
 void chip_select_active(int8_t channel) {
   if(logical_channel[channel].chip_select >= 0) { 
@@ -251,9 +254,6 @@ void setup_hardware_channel(uint8_t channel) {
     SSP_Cmd(HW_CHANNEL(channel).peripheral, ENABLE);
   }
   else {
-    #define LPC_PORT_OFFSET         (0x0020)
-    #define LPC_PIN(pin)            (1UL << pin)
-    #define LPC_GPIO(port)          ((volatile LPC_GPIO_TypeDef *)(LPC_GPIO0_BASE + LPC_PORT_OFFSET * port))
     
     if (logical_channel[channel].bit_order) {
       logical_channel[channel].bit_test = _BV(logical_channel[channel].num_bits;
@@ -342,11 +342,11 @@ int8_t create_logical_spi_channel(pin_t sck, pin_t mosi, pin_t miso, pin_t cs, b
   logical_channel[num_logical_channels].busy = false;
   logical_channel[num_logical_channels].num_bits = 8;
   logical_channel[num_logical_channels].sck_mask = 1 << LPC1768_pin_pin(sck);
-  logical_channel[num_logical_channels].miso_read_reg = &LPC_GPIO(LPC1768_PIN_PORT(miso))->FIOPIN 
+  logical_channel[num_logical_channels].mosi_set_reg = &LPC_GPIO(LPC1768_PIN_PORT(miso))->FIOSET
+  logical_channel[num_logical_channels].mosi_clr_reg = &LPC_GPIO(LPC1768_PIN_PORT(miso))->FIOCLR
   logical_channel[num_logical_channels].mosi_mask = 1 << LPC1768_pin_pin(mosi);
   logical_channel[num_logical_channels].miso_read_reg = &LPC_GPIO(LPC1768_PIN_PORT(miso))->FIOPIN 
   logical_channel[num_logical_channels].miso_mask = 1 << LPC1768_pin_pin(miso);
-  logical_channel[num_logical_channels].miso_read_reg = &LPC_GPIO(LPC1768_PIN_PORT(miso))->FIOPIN 
   get_frequency_used(num_logical_channels);
   return num_logical_channels;
 } 
@@ -577,59 +577,117 @@ uint8_t sw_SPI_send(uint8_t channel, uint8_t data) {
 uint32_t a = 20;
 uint32_t b = 20;
 
-#define READ_MISO(channel) ((*logical_channel[channel].miso_read_reg & logical_channel[channel].miso_mask) ? 1 : 0)
+  #define READ_MISO(channel) ((*logical_channel[channel].miso_read_reg & logical_channel[channel].miso_mask) ? 1 : 0)
+  uint16_t bit_test;
 
-  if ((logical_channel[channel].spi_mode & 0x01) { // CPHA 1 - data changes on leading edge (slave clocks in data on trailing edge)
+  if (logical_channel[channel].MSB) {  // MSB first
+    bit_test = _BV(logical_channel[channel].num_bits -1);
+    if ((logical_channel[channel].spi_mode & 0x01) { // CPHA 1 - data changes on leading edge (slave clocks in data on trailing edge)
+        data_return = 0;
+        for (i = 0; i < logical_channel[channel].num_bits; i ++) {
+          
+        __delay_4cycles(a);
+        
+        if (data & bit_test)
+          *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
+        else  
+          *logical_channel[channel].mosi_clr_reg = logical_channel[channel].mosi_bit_mask;
+          
+        *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
+        
+        data <<= 1;;
+        
+        data_return <<= 1;;    
+        
+        __delay_4cycles(b);
+         
+        *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
+        
+        data_return |= READ_MISO(channel);
+      }  
+      return data_return; 
+    }  
+    else { // CPHA 0 - data changes on trailing edge (slave clocks in data on leading edge)
       data_return = 0;
       for (i = 0; i < logical_channel[channel].num_bits; i ++) {
         
-      __delay_4cycles(a);
-      
-      if (data & bit_test)
-        *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
-      else  
-        *logical_channel[channel].mosi_clr_reg = logical_channel[channel].mosi_bit_mask;
+        if (data & bit_test)
+          *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
+        else  
+          *logical_channel[channel].mosi_clr_reg = logical_channel[channel].mosi_bit_mask;
+
+        data_return <<= 1;;
+
+        __delay_4cycles(a); 
         
-      *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
-      
-      data = data SHIFT 1;
-      
-      data_return = data_return SHIFT 1;    
-      
-      __delay_4cycles(b);
-       
-      *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
-      
-      data_return |= READ_MISO(channel);
-    }  
-    return data_return; 
-  }  
-  else { // CPHA 0 - data changes on trailing edge (slave clocks in data on leading edge)
-    data_return = 0;
-    for (i = 0; i < logical_channel[channel].num_bits; i ++) {
-      
-      if (data & bit_test)
-        *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
-      else  
-        *logical_channel[channel].mosi_clr_reg = logical_channel[channel].mosi_bit_mask;
+        *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
+        
+        data_return |= READ_MISO(channel);
+        
+        data <<= 1;;
+        
+        __delay_4cycles(b);
 
-      data_return = data_return SHIFT 1;
-
-      __delay_4cycles(a); 
-      
-      *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
-      
-      data_return |= READ_MISO(channel);
-      
-      data = data SHIFT 1;
-      
-      __delay_4cycles(b);
-
-      *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
-      
-    }  
-    return data_return;  
+        *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
+        
+      }  
+      return data_return;  
+    }
   }
+  else {  // LSB first
+    bit_test = 0x01;
+    if ((logical_channel[channel].spi_mode & 0x01) { // CPHA 1 - data changes on leading edge (slave clocks in data on trailing edge)
+        data_return = 0;
+        for (i = 0; i < logical_channel[channel].num_bits; i ++) {
+          
+        __delay_4cycles(a);
+        
+        if (data & bit_test)
+          *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
+        else  
+          *logical_channel[channel].mosi_clr_reg = logical_channel[channel].mosi_bit_mask;
+          
+        *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
+        
+        data >>= 1;;
+        
+
+        
+        __delay_4cycles(b);
+         
+        *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
+        
+        data_return |= READ_MISO(channel) << i;
+      }  
+      return data_return; 
+    }  
+    else { // CPHA 0 - data changes on trailing edge (slave clocks in data on leading edge)
+      data_return = 0;
+      for (i = 0; i < logical_channel[channel].num_bits; i ++) {
+        
+        if (data & bit_test)
+          *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
+        else  
+          *logical_channel[channel].mosi_clr_reg = logical_channel[channel].mosi_bit_mask;
+
+
+
+        __delay_4cycles(a); 
+        
+        *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
+        
+        data_return |= READ_MISO(channel) << i;
+        
+        data >>= 1;;
+        
+        __delay_4cycles(b);
+
+        *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
+        
+      }  
+      return data_return;  
+    }
+  }  
 } // sw_SPI_send
 
 
