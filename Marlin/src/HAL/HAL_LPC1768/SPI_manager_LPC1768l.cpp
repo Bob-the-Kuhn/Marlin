@@ -122,6 +122,15 @@ struct LogicalChannel {
   bool bit_order;             // 1 - MSB first
   uint8_t num_bits;
   bool busy;
+  uint32_t* mosi_set_reg;
+  uint32_t* mosi_clr_reg;
+  uint32_t mosi_bit_mask;
+  uint32_t* clock_active_register;
+  uint32_t* clock_inactive_register;
+  uint32_t sck_bit_mask;
+  uint32_t miso_mask;
+  uint32_t* miso_read_reg;
+  uint32_t miso_mask;
 } logical_channel[];
 
 
@@ -197,27 +206,27 @@ bool initialise_pins(uint8_t channel) {
     pin_cfg.Pinmode = PINSEL_PINMODE_PULLUP;
     pin_cfg.Funcnum = 0; //gpio function
     
-    pin_cfg.Portnum = LPC1768_pin_port(logical_channel[channel].SCK);
-    pin_cfg.Pinnum = LPC1768_pin_pin(logical_channel[channel].SCK);
+    pin_cfg.Portnum = LPC1768_pin_port(logical_channel[channel].sck);
+    pin_cfg.Pinnum = LPC1768_pin_pin(logical_channel[channel].sck);
     PINSEL_ConfigPin(&pin_cfg);
-    if (???) 
-      GPIO_SetValue(LPC1768_pin_port(logical_channel[channel].SCK), (1 << LPC1768_pin_pin(logical_channel[channel].SCK)));
+    if (logical_channel[channel].spi_mode & 0x02) {  // set SCK to inactive state
+      GPIO_SetValue(LPC1768_pin_port(logical_channel[channel].sck), (1 << LPC1768_pin_pin(logical_channel[channel].sck)));
     else  
-      GPIO_ClearValue(LPC1768_pin_port(logical_channel[channel].SCK), (1 << LPC1768_pin_pin(logical_channel[channel].SCK)));
-    GPIO_SetDir(LPC1768_pin_port(logical_channel[channel].SCK), (1 << LPC1768_pin_pin(logical_channel[channel].SCK), 1));
+      GPIO_ClearValue(LPC1768_pin_port(logical_channel[channel].sck), (1 << LPC1768_pin_pin(logical_channel[channel].sck)));
+    GPIO_SetDir(LPC1768_pin_port(logical_channel[channel].sck), (1 << LPC1768_pin_pin(logical_channel[channel].sck), 1));
     
 
-    pin_cfg.Portnum = LPC1768_pin_port(logical_channel[channel].MOSI);
-    pin_cfg.Pinnum = LPC1768_pin_pin(logical_channel[channel].MOSI);
+    pin_cfg.Portnum = LPC1768_pin_port(logical_channel[channel].mosi);
+    pin_cfg.Pinnum = LPC1768_pin_pin(logical_channel[channel].mosi);
     PINSEL_ConfigPin(&pin_cfg);
-    GPIO_ClearValue(LPC1768_pin_port(logical_channel[channel].MOSI), (1 << LPC1768_pin_pin(logical_channel[channel].MOSI)));
-    GPIO_SetDir(LPC1768_pin_port(logical_channel[channel].MOSI), (1 << LPC1768_pin_pin(logical_channel[channel].MOSI), 1));
+    GPIO_ClearValue(LPC1768_pin_port(logical_channel[channel].mosi), (1 << LPC1768_pin_pin(logical_channel[channel].mosi)));
+    GPIO_SetDir(LPC1768_pin_port(logical_channel[channel].mosi), (1 << LPC1768_pin_pin(logical_channel[channel].mosi), 1));
 
 
-    pin_cfg.Portnum = LPC1768_pin_port(logical_channel[channel].MISO);
-    pin_cfg.Pinnum = LPC1768_pin_pin(logical_channel[channel].MISO);
+    pin_cfg.Portnum = LPC1768_pin_port(logical_channel[channel].miso);
+    pin_cfg.Pinnum = LPC1768_pin_pin(logical_channel[channel].miso);
     PINSEL_ConfigPin(&pin_cfg);
-    GPIO_SetDir(LPC1768_pin_port(logical_channel[channel].MISO), (1 << LPC1768_pin_pin(logical_channel[channel].MISO), 0));
+    GPIO_SetDir(LPC1768_pin_port(logical_channel[channel].miso), (1 << LPC1768_pin_pin(logical_channel[channel].miso), 0));
   }  
   return true;
 } // initialise_pins
@@ -251,7 +260,7 @@ void setup_hardware_channel(uint8_t channel) {
       logical_channel[channel].shift_direction = SHIFT_LEFT;
     }
     else {
-      logical_channel[channel].bit_test = 1
+      logical_channel[channel].bit_test = 1;
       logical_channel[channel].shift_direction = SHIFT_RIGHT;
     }
     
@@ -332,6 +341,12 @@ int8_t create_logical_spi_channel(pin_t sck, pin_t mosi, pin_t miso, pin_t cs, b
   logical_channel[num_logical_channels].CPSR = 0; // not used on software SPI
   logical_channel[num_logical_channels].busy = false;
   logical_channel[num_logical_channels].num_bits = 8;
+  logical_channel[num_logical_channels].sck_mask = 1 << LPC1768_pin_pin(sck);
+  logical_channel[num_logical_channels].miso_read_reg = &LPC_GPIO(LPC1768_PIN_PORT(miso))->FIOPIN 
+  logical_channel[num_logical_channels].mosi_mask = 1 << LPC1768_pin_pin(mosi);
+  logical_channel[num_logical_channels].miso_read_reg = &LPC_GPIO(LPC1768_PIN_PORT(miso))->FIOPIN 
+  logical_channel[num_logical_channels].miso_mask = 1 << LPC1768_pin_pin(miso);
+  logical_channel[num_logical_channels].miso_read_reg = &LPC_GPIO(LPC1768_PIN_PORT(miso))->FIOPIN 
   get_frequency_used(num_logical_channels);
   return num_logical_channels;
 } 
@@ -532,14 +547,43 @@ extern "C" void ssp_irq_handler(uint8_t hw_channel) {
 
 /////////////////   software SPI
 
+#define nop() __asm__ __volatile__("nop;\n\t":::)
+
+void __delay_4cycles(uint32_t cy) __attribute__ ((weak));
+
+FORCE_INLINE void __delay_4cycles(uint32_t cy) { // +1 cycle
+  #if ARCH_PIPELINE_RELOAD_CYCLES<2
+    #define EXTRA_NOP_CYCLES "nop"
+  #else
+    #define EXTRA_NOP_CYCLES ""
+  #endif
+
+  __asm__ __volatile__(
+    ".syntax unified" "\n\t" // is to prevent CM0,CM1 non-unified syntax
+
+    "loop%=:" "\n\t"
+    " subs %[cnt],#1" "\n\t"
+    EXTRA_NOP_CYCLES "\n\t"
+    " bne loop%=" "\n\t"
+    : [cnt]"+r"(cy) // output: +r means input+output
+    : // input:
+    : "cc" // clobbers:
+  );
+}
+
 uint8_t sw_SPI_send(uint8_t channel, uint8_t data) {
   uint8_t i, data_return;
+
+uint32_t a = 20;
+uint32_t b = 20;
+
+#define READ_MISO(channel) ((*logical_channel[channel].miso_read_reg & logical_channel[channel].miso_mask) ? 1 : 0)
 
   if ((logical_channel[channel].spi_mode & 0x01) { // CPHA 1 - data changes on leading edge (slave clocks in data on trailing edge)
       data_return = 0;
       for (i = 0; i < logical_channel[channel].num_bits; i ++) {
         
-      delay(a);
+      __delay_4cycles(a);
       
       if (data & bit_test)
         *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
@@ -552,11 +596,11 @@ uint8_t sw_SPI_send(uint8_t channel, uint8_t data) {
       
       data_return = data_return SHIFT 1;    
       
-      delay(b);
+      __delay_4cycles(b);
        
       *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
       
-      data_return |= MISO_read SHIFT logical_channel[channel].num_bits;
+      data_return |= READ_MISO(channel);
     }  
     return data_return; 
   }  
@@ -571,15 +615,15 @@ uint8_t sw_SPI_send(uint8_t channel, uint8_t data) {
 
       data_return = data_return SHIFT 1;
 
-      delay(a); 
+      __delay_4cycles(a); 
       
       *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
       
-      data_return |= MISO_read SHIFT logical_channel[channel].num_bits;
+      data_return |= READ_MISO(channel);
       
       data = data SHIFT 1;
       
-      delay(b);
+      __delay_4cycles(b);
 
       *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
       
