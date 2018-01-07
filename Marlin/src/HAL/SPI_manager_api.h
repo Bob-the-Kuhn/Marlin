@@ -14,8 +14,8 @@ namespace SPI {
  *  2+ - system dependent
  */
 
-void begin_transmision(int8_t channel);
-void end_transmision(int8_t channel);
+bool begin_transmision(int8_t channel);
+bool end_transmision(int8_t channel);
 
 int8_t create_logical_spi_channel(int8_t spi_channel, pin_t cs_pin, bool cs_polarity, uint32_t frequency, uint8_t spi_mode, bool bit_order);
 int8_t create_logical_spi_channel(pin_t SCK, pin_t MOSI, pin_t MISO, pin_t cs, bool cs_polarity, uint32_t frequency, uint8_t spi_mode, bool bit_order);

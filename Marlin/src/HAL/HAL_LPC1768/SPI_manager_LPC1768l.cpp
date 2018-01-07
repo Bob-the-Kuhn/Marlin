@@ -9,7 +9,13 @@
 
 #include "../spi_api.h
 
-
+/**
+ *   SPI MODE  CPOL   CPHA
+ *      0        0     0     CPOL 0 - clock idles at low
+ *      1        0     1     CPOL 1 - clock idles at high
+ *      2        1     0     CPHA 0 - data changes on trailing edge (slave clocks in data on leading edge)
+ *      3        1     1     CPHA 1 - data changes on leading edge (slave clocks in data on trailing edge)
+ */
 
 /** @brief SSP configuration structure */
 /**
@@ -103,16 +109,18 @@ struct HardwareChannel {
 
 struct LogicalChannel {
   int8_t spi_channel;    // 0: SW spi, 1: LCD SD card , 2+ system dependent
-  pin_t SCK;
-  pin_t MOSI;
-  pin_t MISO;
+  pin_t sck;
+  pin_t mosi;
+  pin_t miso;
   pin_t chip_select;          // -1 - not used
   bool chip_select_polarity;  // 0 - active low
   uint32_t frequency;
-  uint32_t CR0;
-  uint32_t CPSR;
+  uint32_t frequency_used;    // may need to convert SD card speeds to a real frequency
+//  uint32_t CR0;
+//  uint32_t CPSR;
   uint8_t spi_mode;
   bool bit_order;             // 1 - MSB first
+  uint8_t num_bits;
   bool busy;
 } logical_channel[];
 
@@ -120,8 +128,10 @@ struct LogicalChannel {
 
 //Internal functions
 
-extern "C" void ssp_irq_handler(uint8_t HW_CHANNEL);
-
+extern "C" void ssp_irq_handler(uint8_t hw_channel);
+#define HW_CHANNEL(chan) logical_channel[chan].spi_channel
+#define SHIFT_LEFT <<
+#define SHIFT_RIGHT >>
 
 void chip_select_active(int8_t channel) {
   if(logical_channel[channel].chip_select >= 0) { 
@@ -147,36 +157,31 @@ void chip_select_inactive(int8_t channel) {
  */
 bool initialise_pins(uint8_t channel) {
 
-
-
   PINSEL_CFG_Type pin_cfg;
   pin_cfg.OpenDrain = PINSEL_PINMODE_NORMAL;
   pin_cfg.Pinmode = PINSEL_PINMODE_PULLUP;
 
-  if(HW_CHANNEL.initialised == false && logical_channel[chan].spi_channel) {  // only do this for the hardware SPIs
+  if(HW_CHANNEL(channel).initialised == false && logical_channel[chan].spi_channel) {  // only do this for the hardware SPIs
     pin_cfg.Funcnum = 2; //ssp (spi) function
     pin_cfg.Portnum = HW_CHANNEL(channel).clk_port;
-    pin_cfg.Pinnum = HW_CHANNEL.clk_pin;
+    pin_cfg.Pinnum = HW_CHANNEL(channel).clk_pin;
     PINSEL_ConfigPin(&pin_cfg); //clk
 
-    pin_cfg.Portnum = HW_CHANNEL.miso_port;
-    pin_cfg.Pinnum = HW_CHANNEL.miso_pin;
+    pin_cfg.Portnum = HW_CHANNEL(channel).miso_port;
+    pin_cfg.Pinnum = HW_CHANNEL(channel).miso_pin;
     PINSEL_ConfigPin(&pin_cfg); //miso
 
-    pin_cfg.Portnum = HW_CHANNEL.mosi_port;
-    pin_cfg.Pinnum = HW_CHANNEL.mosi_pin;
+    pin_cfg.Portnum = HW_CHANNEL(channel).mosi_port;
+    pin_cfg.Pinnum = HW_CHANNEL(channel).mosi_pin;
     PINSEL_ConfigPin(&pin_cfg); //mosi
 
-    SSP_Init(HW_CHANNEL.peripheral, &logical_channel->config);
-    SSP_Cmd(HW_CHANNEL.peripheral, ENABLE);
+    HW_CHANNEL(channel).initialised = true;
 
-    HW_CHANNEL.initialised = true;
-
-    //NVIC_SetPriority(HW_CHANNEL.IRQn, NVIC_EncodePriority(0, 3, 0)); //Very Low priority
-    //NVIC_EnableIRQ(HW_CHANNEL.IRQn);
+    //NVIC_SetPriority(HW_CHANNEL(channel).IRQn, NVIC_EncodePriority(0, 3, 0)); //Very Low priority
+    //NVIC_EnableIRQ(HW_CHANNEL(channel).IRQn);
   }
 
-  if (logical_channel[channel].chip_select >= 0) {
+  if (logical_channel[channel].chip_select >= 0) { // only do this for the hardware SPIs
     pin_cfg.Portnum = LPC1768_pin_port(logical_channel[channel].chip_select);
     pin_cfg.Pinnum = LPC1768_pin_pin(logical_channel[channel].chip_select);
     pin_cfg.Pinmode = logical_channel[channel].chip_select_polarity ==  SignalPolarity::ACTIVE_LOW ? PINSEL_PINMODE_PULLUP : PINSEL_PINMODE_PULLDOWN;
@@ -215,112 +220,109 @@ bool initialise_pins(uint8_t channel) {
     GPIO_SetDir(LPC1768_pin_port(logical_channel[channel].MISO), (1 << LPC1768_pin_pin(logical_channel[channel].MISO), 0));
   }  
   return true;
-}
+} // initialise_pins
 
 
-void set_frequency(uint8_t channel, uint32_t frequency) {
-  LogicalChannel* logical_channel = get_logical_channel(channel);
-  if(logical_channel == nullptr) return;
-
-  SSP_Cmd(logical_channel->HW_CHANNEL.peripheral, DISABLE);
-  uint32_t prescale, cr0_div, cmp_clk, ssp_clk;
-
-  if (logical_channel->HW_CHANNEL.peripheral == LPC_SSP0){
-    ssp_clk = CLKPWR_GetPCLK (CLKPWR_PCLKSEL_SSP0);
-  } else if (logical_channel->HW_CHANNEL.peripheral == LPC_SSP1) {
-    ssp_clk = CLKPWR_GetPCLK (CLKPWR_PCLKSEL_SSP1);
-  } else {
-    return;
-  }
-  //find the closest clock divider / prescaler
-  cr0_div = 0;
-  cmp_clk = 0xFFFFFFFF;
-  prescale = 2;
-  while (cmp_clk > frequency) {
-    cmp_clk = ssp_clk / ((cr0_div + 1) * prescale);
-    if (cmp_clk > frequency) {
-      cr0_div++;
-      if (cr0_div > 0xFF) {
-        cr0_div = 0;
-        prescale += 2;
-      }
-    }
-  }
-
-  logical_channel->HW_CHANNEL.peripheral->CR0 &= (~SSP_CR0_SCR(0xFF)) & SSP_CR0_BITMASK;
-  logical_channel->HW_CHANNEL.peripheral->CR0 |= (SSP_CR0_SCR(cr0_div)) & SSP_CR0_BITMASK;
-  logical_channel->CR0 = logical_channel->HW_CHANNEL.peripheral->CR0; // preserve for restore
-
-  logical_channel->HW_CHANNEL.peripheral->CPSR = prescale & SSP_CPSR_BITMASK;
-  logical_channel->CPSR = logical_channel->HW_CHANNEL.peripheral->CPSR; // preserve for restore
-
-  logical_channel->config.Clockfrequency = ssp_clk / ((cr0_div + 1) * prescale);
-
-  SSP_Cmd(logical_channel->HW_CHANNEL.peripheral, ENABLE);
-}
-
-//////////////////////////////////////////////////////
-
-
-void get_frequency_settings(uint8_t channel) { 
-  if (logical_channel[channel].spi_channel) {   // hardware SPI
-    if (hardware_channel[logical_channel[channel].spi_channel -1].peripheral == LPC_SSP0){
-      ssp_clk = CLKPWR_GetPCLK (CLKPWR_PCLKSEL_SSP0);
-    } else if (logical_channel->HW_CHANNEL.peripheral == LPC_SSP1) {
-      ssp_clk = CLKPWR_GetPCLK (CLKPWR_PCLKSEL_SSP1);
-    } else {
-      return;
-    }
-    //find the closest clock divider / prescaler
-    cr0_div = 0;
-    cmp_clk = 0xFFFFFFFF;
-    prescale = 2;
-    while (cmp_clk > frequency) {
-      cmp_clk = ssp_clk / ((cr0_div + 1) * prescale);
-      if (cmp_clk > frequency) {
-        cr0_div++;
-        if (cr0_div > 0xFF) {
-          cr0_div = 0;
-          prescale += 2;
-        }
-      }
-    }
-  }
-  else {  // software SPI - CR0 & CPSR not used
-    cr0_div = 0;
-    prescale = 0;
-  } 
+void setup_hardware_channel(uint8_t channel) {
   
-  logical_channel[channel].CR0 = cr0_div;
-  logical_channel[channel].CPSR = prescale;
-}
+  if (logical_channel[channel].spi_channel) {   // hardware SPI
+    SSP_Cmd(HW_CHANNEL(channel).peripheral, DISABLE);
+
+    SSP_CFG_Type HW_SPI_init; // data structure to hold init values
+
+    HW_SPI_init.ClockRate = logical_channel[channel].frequency_used;
+    HW_SPI_init.Databit = logical_channel[channel].num_bits;
+    HW_SPI_init.CPHA = logical_channel[channel].spi_mode & 0x01;
+    HW_SPI_init.CPOL = (logical_channel[channel].spi_mode >> 1) & 0x01;
+    HW_SPI_init.Mode = SSP_MASTER_MODE;
+    HW_SPI_init.FrameFormat = SSP_FRAME_SPI;
+    SSP_Init(LPC_SSP0, &HW_SPI_init);  // puts the values into the proper bits in the SSP0 registers
+    HW_CHANNEL(channel)->CR0 &= ~0x0F;
+    HW_CHANNEL(channel)->CR0 |= (logical_channel[channel].num_bits - 1) & 0x0F;
+    SSP_Cmd(HW_CHANNEL(channel).peripheral, ENABLE);
+  }
+  else {
+    #define LPC_PORT_OFFSET         (0x0020)
+    #define LPC_PIN(pin)            (1UL << pin)
+    #define LPC_GPIO(port)          ((volatile LPC_GPIO_TypeDef *)(LPC_GPIO0_BASE + LPC_PORT_OFFSET * port))
+    
+    if (logical_channel[channel].bit_order) {
+      logical_channel[channel].bit_test = _BV(logical_channel[channel].num_bits;
+      logical_channel[channel].shift_direction = SHIFT_LEFT;
+    }
+    else {
+      logical_channel[channel].bit_test = 1
+      logical_channel[channel].shift_direction = SHIFT_RIGHT;
+    }
+    
+    if (logical_channel[channel].spi_mode & 0x02) {
+      logical_channel[channel].clock_active_register = &LPC_GPIO(LPC1768_PIN_PORT(pin))->FIOCLR;
+      logical_channel[channel].clock_inactive_register = &LPC_GPIO(LPC1768_PIN_PORT(pin))->FIOSET;
+    }
+    else {
+      logical_channel[channel].clock_active_register = &LPC_GPIO(LPC1768_PIN_PORT(pin))->FIOSET;
+      logical_channel[channel].clock_inactive_register = &LPC_GPIO(LPC1768_PIN_PORT(pin))->FIOCLR;
+    }  
+  }  
+
+    
+  
+} //  setup_hardware_channel
+
+
+void get_frequency_used(uint8_t channel) { 
+  
+  // table to convert Marlin spiRates (0-5 plus default) into bit rates
+  uint32_t Marlin_speed[7]; // CPSR is always 2
+  Marlin_speed[0] = 8333333; //(SCR:  2)  desired: 8,000,000  actual: 8,333,333  +4.2%  SPI_FULL_SPEED
+  Marlin_speed[1] = 4166667; //(SCR:  5)  desired: 4,000,000  actual: 4,166,667  +4.2%  SPI_HALF_SPEED
+  Marlin_speed[2] = 2083333; //(SCR: 11)  desired: 2,000,000  actual: 2,083,333  +4.2%  SPI_QUARTER_SPEED
+  Marlin_speed[3] = 1000000; //(SCR: 24)  desired: 1,000,000  actual: 1,000,000         SPI_EIGHTH_SPEED
+  Marlin_speed[4] =  500000; //(SCR: 49)  desired:   500,000  actual:   500,000         SPI_SPEED_5
+  Marlin_speed[5] =  250000; //(SCR: 99)  desired:   250,000  actual:   250,000         SPI_SPEED_6
+  Marlin_speed[6] =  125000; //(SCR:199)  desired:   125,000  actual:   125,000         Default from HAL.h
+
+  if (logical_channel[channel].frequency < 7)
+    logical_channel[channel].frequency = Marlin_speed[logical_channel[channel].frequency];
+  else  
+    logical_channel[channel].frequency_used = logical_channel[channel].frequency;
+} 
 
 int8_t num_logical_channels = -1;
 
-LogicalChannel logical_channel[];
-
 int8_t create_logical_spi_channel(int8_t spi_channel, pin_t cs_pin, bool cs_polarity, uint32_t frequency, uint8_t spi_mode, bool bit_order) {
+
+  if (!bit_order)  // LPC1768 SPI controller doesn't support reverse bit order
+    return -1;
+
   num_logical_channels ++;
   logical_channel[num_logical_channels].spi_channel = spi_channel;    // 0: SW spi, 1: LCD SD card , 2+ system dependent
-  logical_channel[num_logical_channels].SCK = -1;
-  logical_channel[num_logical_channels].MOSI = -1;
-  logical_channel[num_logical_channels].MISO = -1;
+  logical_channel[num_logical_channels].sck = -1;
+  logical_channel[num_logical_channels].mosi = -1;
+  logical_channel[num_logical_channels].miso = -1;
   logical_channel[num_logical_channels].chip_select = cs_pin;          // -1 - not used
   logical_channel[num_logical_channels].chip_select_polarity = cs_polarity;  // 0 - active low
   logical_channel[num_logical_channels].frequency = frequency;
   logical_channel[num_logical_channels].spi_mode = spi_mode;
   logical_channel[num_logical_channels].bit_order = bit_order;
   logical_channel[num_logical_channels].busy = false;
-  get_frequency_settings(num_logical_channels);  // get settings for CR0 & CPSR
+  logical_channel[num_logical_channels].num_bits = 8;
+  get_frequency_used(num_logical_channels);  // get settings for CR0 & CPSR
   return num_logical_channels;
 } 
 
-int8_t create_logical_spi_channel(pin_t SCK, pin_t MOSI, pin_t MISO, pin_t cs, bool cs_polarity, uint32_t frequency, uint8_t spi_mode, bool bit_order);
+int8_t create_logical_spi_channel(pin_t sck, pin_t mosi, pin_t miso, pin_t cs, bool cs_polarity, uint32_t frequency, uint8_t spi_mode, bool bit_order);
+  // make sure software SPI doesn't try to use any of the hardware SPI pins
+  if (sck == P0_15 || sck == P0_7 ||
+     mosi == P0_18 || mosi == P0_9 ||
+     miso == P0_17 || miso == P0_8)
+    return -1;
+ 
   num_logical_channels ++;
   logical_channel[num_logical_channels].spi_channel = 0;    // 0: SW spi, 1: LCD SD card , 2+ system dependent
-  logical_channel[num_logical_channels].SCK = SCK;
-  logical_channel[num_logical_channels].MOSI = MOSI;
-  logical_channel[num_logical_channels].MISO = MISO;
+  logical_channel[num_logical_channels].sck = sck;
+  logical_channel[num_logical_channels].mosi = mosi;
+  logical_channel[num_logical_channels].miso = miso;
   logical_channel[num_logical_channels].chip_select = cs_pin;          // -1 - not used
   logical_channel[num_logical_channels].chip_select_polarity = cs_polarity;  // 0 - active low
   logical_channel[num_logical_channels].frequency = frequency;
@@ -329,25 +331,25 @@ int8_t create_logical_spi_channel(pin_t SCK, pin_t MOSI, pin_t MISO, pin_t cs, b
   logical_channel[num_logical_channels].CR0 = 0;  // not used on software SPI
   logical_channel[num_logical_channels].CPSR = 0; // not used on software SPI
   logical_channel[num_logical_channels].busy = false;
+  logical_channel[num_logical_channels].num_bits = 8;
+  get_frequency_used(num_logical_channels);
   return num_logical_channels;
 } 
 
+void HAL_SW_SPI_transfer(uint8_t channel, const uint8_t *buffer_write, uint8_t *buffer_read, uint32_t length);
 
 void HAL_SPI_transfer(uint8_t channel, const uint8_t *buffer_write, uint8_t *buffer_read, uint32_t length) {
   
   if (logical_channel[channel].spi_channel) {  // hardware spi
   
-    LogicalChannel* logical_channel = get_logical_channel(channel);
+    hardware_channel[logical_channel[channel].spi_channel].xfer_config.tx_data = (void *)buffer_write;
+    hardware_channel[logical_channel[channel].spi_channel].xfer_config.rx_data = (void *)buffer_read;
+    hardware_channel[logical_channel[channel].spi_channel].xfer_config.length = length;
 
-
-    logical_channel->HW_CHANNEL.xfer_config.tx_data = (void *)buffer_write;
-    logical_channel->HW_CHANNEL.xfer_config.rx_data = (void *)buffer_read;
-    logical_channel->HW_CHANNEL.xfer_config.length = length;
-
-    (void)SSP_ReadWrite(logical_channel->HW_CHANNEL.peripheral, &logical_channel->HW_CHANNEL.xfer_config, SSP_TRANSFER_POLLING); //SSP_TRANSFER_INTERRUPT
+    (void)SSP_ReadWrite(hardware_channel[logical_channel[channel].spi_channel].peripheral, &hardware_channel[logical_channel[channel].spi_channel].xfer_config, SSP_TRANSFER_POLLING); //SSP_TRANSFER_INTERRUPT
   }
   else 
-    HAL_LPC1768_SW_SPI_transfer(????);
+    HAL_LPC1768_SW_SPI_transfer(channel, *buffer_write, *buffer_read, length);
 }
 
 
@@ -355,10 +357,15 @@ int8_t active_logical_channel = -1;
 int8_t active_hardware_channel = -1;
 
 bool begin_transmision(int8_t channel) {
-if ((active_logical_channel == channel) && logical_channel[channel].spi_channel == active_hardware_channel))
+  if ((active_logical_channel == channel) && logical_channel[channel].spi_channel == active_hardware_channel))
     return true;   // already setup & running
   if (active_logical_channel >= 0) 
     return false;  // another channel is active
+  active_logical_channel = channel;
+  active_hardware_channel = logical_channel[channel].spi_channel;
+  logical_channel[channel].busy = true;
+  hardware_channel[logical_channel[channel].spi_channel].in_use = true; 
+    
   initialise_pins(channel);   
   setup_hardware_channel(logical_channel[channel].spi_channel); 
   chip_select_active(channel);
@@ -370,7 +377,7 @@ bool end_transmision(int8_t channel) {
    active_logical_channel = -1;
    active_hardware_channel = -1;
    logical_channel[channel].busy = false;
-   hardware_channel[logical_channel[channel].spi_channel].busy = false;
+   hardware_channel[logical_channel[channel].spi_channel].in_use = false;
    chip_select_inactive(channel);
 }
 
@@ -405,39 +412,39 @@ uint8_t transfer(uint8_t channel, uint8_t value) {
 /*
  *  Interrupt Handlers
  */
-extern "C" void ssp_irq_handler(uint8_t HW_CHANNEL) {
+extern "C" void ssp_irq_handler(uint8_t hw_channel) {
 
   SSP_DATA_SETUP_Type *xf_setup;
   uint32_t tmp;
   uint8_t dataword;
 
   // Disable all SSP interrupts
-  SSP_IntConfig(hardware_channel[HW_CHANNEL].peripheral, SSP_INTCFG_ROR | SSP_INTCFG_RT | SSP_INTCFG_RX | SSP_INTCFG_TX, DISABLE);
+  SSP_IntConfig(hardware_channel[hw_channel].peripheral, SSP_INTCFG_ROR | SSP_INTCFG_RT | SSP_INTCFG_RX | SSP_INTCFG_TX, DISABLE);
 
-  dataword = (SSP_GetDataSize(hardware_channel[HW_CHANNEL].peripheral) > 8) ? 1 : 0;
+  dataword = (SSP_GetDataSize(hardware_channel[hw_channel].peripheral) > 8) ? 1 : 0;
 
-  xf_setup = &hardware_channel[HW_CHANNEL].xfer_config;
+  xf_setup = &hardware_channel[hw_channel].xfer_config;
   // save status
-  tmp = SSP_GetRawIntStatusReg(hardware_channel[HW_CHANNEL].peripheral);
+  tmp = SSP_GetRawIntStatusReg(hardware_channel[hw_channel].peripheral);
   xf_setup->status = tmp;
 
   // Check overrun error
   if (tmp & SSP_RIS_ROR) {
     // Clear interrupt
-    SSP_ClearIntPending(hardware_channel[HW_CHANNEL].peripheral, SSP_INTCLR_ROR);
+    SSP_ClearIntPending(hardware_channel[hw_channel].peripheral, SSP_INTCLR_ROR);
     // update status
     xf_setup->status |= SSP_STAT_ERROR;
     // Set Complete Flag
-    hardware_channel[HW_CHANNEL].xfer_complete = SET;
-    if(!hardware_channel[HW_CHANNEL].active_channel->ssel_override) clear_ssel(hardware_channel[HW_CHANNEL].active_channel);
+    hardware_channel[hw_channel].xfer_complete = SET;
+    if(!hardware_channel[hw_channel].active_channel->ssel_override) clear_ssel(hardware_channel[hw_channel].active_channel);
     return;
   }
 
   if ((xf_setup->tx_cnt != xf_setup->length) || (xf_setup->rx_cnt != xf_setup->length)) {
     /* check if RX FIFO contains data */
-    while ((SSP_GetStatus(hardware_channel[HW_CHANNEL].peripheral, SSP_STAT_RXFIFO_NOTEMPTY)) && (xf_setup->rx_cnt != xf_setup->length)) {
+    while ((SSP_GetStatus(hardware_channel[hw_channel].peripheral, SSP_STAT_RXFIFO_NOTEMPTY)) && (xf_setup->rx_cnt != xf_setup->length)) {
       // Read data from SSP data
-      tmp = SSP_ReceiveData(hardware_channel[HW_CHANNEL].peripheral);
+      tmp = SSP_ReceiveData(hardware_channel[hw_channel].peripheral);
 
       // Store data to destination
       if (xf_setup->rx_data != nullptr) {
@@ -455,40 +462,40 @@ extern "C" void ssp_irq_handler(uint8_t HW_CHANNEL) {
       }
     }
 
-    while ((SSP_GetStatus(hardware_channel[HW_CHANNEL].peripheral, SSP_STAT_TXFIFO_NOTFULL)) && (xf_setup->tx_cnt != xf_setup->length)) {
+    while ((SSP_GetStatus(hardware_channel[hw_channel].peripheral, SSP_STAT_TXFIFO_NOTFULL)) && (xf_setup->tx_cnt != xf_setup->length)) {
       // Write data to buffer
       if (xf_setup->tx_data == nullptr) {
         if (dataword == 0) {
-          SSP_SendData(hardware_channel[HW_CHANNEL].peripheral, 0xFF);
+          SSP_SendData(hardware_channel[hw_channel].peripheral, 0xFF);
           xf_setup->tx_cnt++;
         } else {
-          SSP_SendData(hardware_channel[HW_CHANNEL].peripheral, 0xFFFF);
+          SSP_SendData(hardware_channel[hw_channel].peripheral, 0xFFFF);
           xf_setup->tx_cnt += 2;
         }
       } else {
         if (dataword == 0) {
-          SSP_SendData(hardware_channel[HW_CHANNEL].peripheral, (*(uint8_t *) ((uint32_t) xf_setup->tx_data + xf_setup->tx_cnt)));
+          SSP_SendData(hardware_channel[hw_channel].peripheral, (*(uint8_t *) ((uint32_t) xf_setup->tx_data + xf_setup->tx_cnt)));
           xf_setup->tx_cnt++;
         } else {
-          SSP_SendData(hardware_channel[HW_CHANNEL].peripheral, (*(uint16_t *) ((uint32_t) xf_setup->tx_data + xf_setup->tx_cnt)));
+          SSP_SendData(hardware_channel[hw_channel].peripheral, (*(uint16_t *) ((uint32_t) xf_setup->tx_data + xf_setup->tx_cnt)));
           xf_setup->tx_cnt += 2;
         }
       }
 
       // Check overrun error
-      if (SSP_GetRawIntStatus(hardware_channel[HW_CHANNEL].peripheral, SSP_INTSTAT_RAW_ROR)) {
+      if (SSP_GetRawIntStatus(hardware_channel[hw_channel].peripheral, SSP_INTSTAT_RAW_ROR)) {
         // update status
         xf_setup->status |= SSP_STAT_ERROR;
         // Set Complete Flag
-        hardware_channel[HW_CHANNEL].xfer_complete = SET;
-        if(!hardware_channel[HW_CHANNEL].active_channel->ssel_override) clear_ssel(hardware_channel[HW_CHANNEL].active_channel);
+        hardware_channel[hw_channel].xfer_complete = SET;
+        if(!hardware_channel[hw_channel].active_channel->ssel_override) clear_ssel(hardware_channel[hw_channel].active_channel);
         return;
       }
 
       // Check for any data available in RX FIFO
-      while ((SSP_GetStatus(hardware_channel[HW_CHANNEL].peripheral, SSP_STAT_RXFIFO_NOTEMPTY)) && (xf_setup->rx_cnt != xf_setup->length)) {
+      while ((SSP_GetStatus(hardware_channel[hw_channel].peripheral, SSP_STAT_RXFIFO_NOTEMPTY)) && (xf_setup->rx_cnt != xf_setup->length)) {
         // Read data from SSP data
-        tmp = SSP_ReceiveData(hardware_channel[HW_CHANNEL].peripheral);
+        tmp = SSP_ReceiveData(hardware_channel[hw_channel].peripheral);
 
         // Store data to destination
         if (xf_setup->rx_data != nullptr) {
@@ -511,25 +518,101 @@ extern "C" void ssp_irq_handler(uint8_t HW_CHANNEL) {
   // If there more data to sent or receive
   if ((xf_setup->rx_cnt != xf_setup->length) || (xf_setup->tx_cnt != xf_setup->length)) {
     // Enable all interrupt
-    SSP_IntConfig(hardware_channel[HW_CHANNEL].peripheral, SSP_INTCFG_ROR | SSP_INTCFG_RT | SSP_INTCFG_RX | SSP_INTCFG_TX, ENABLE);
+    SSP_IntConfig(hardware_channel[hw_channel].peripheral, SSP_INTCFG_ROR | SSP_INTCFG_RT | SSP_INTCFG_RX | SSP_INTCFG_TX, ENABLE);
   } else {
     // Save status
     xf_setup->status = SSP_STAT_DONE;
     // Set Complete Flag
-    hardware_channel[HW_CHANNEL].xfer_complete = SET;
-    if(!hardware_channel[HW_CHANNEL].active_channel->ssel_override) clear_ssel(hardware_channel[HW_CHANNEL].active_channel);
+    hardware_channel[hw_channel].xfer_complete = SET;
+    if(!hardware_channel[hw_channel].active_channel->ssel_override) clear_ssel(hardware_channel[hw_channel].active_channel);
   }
-}
+} //ssp_irq_handler
 
-}
-}
+
+
+/////////////////   software SPI
+
+uint8_t sw_SPI_send(uint8_t channel, uint8_t data) {
+  uint8_t i, data_return;
+
+  if ((logical_channel[channel].spi_mode & 0x01) { // CPHA 1 - data changes on leading edge (slave clocks in data on trailing edge)
+      data_return = 0;
+      for (i = 0; i < logical_channel[channel].num_bits; i ++) {
+        
+      delay(a);
+      
+      if (data & bit_test)
+        *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
+      else  
+        *logical_channel[channel].mosi_clr_reg = logical_channel[channel].mosi_bit_mask;
+        
+      *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
+      
+      data = data SHIFT 1;
+      
+      data_return = data_return SHIFT 1;    
+      
+      delay(b);
+       
+      *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
+      
+      data_return |= MISO_read SHIFT logical_channel[channel].num_bits;
+    }  
+    return data_return; 
+  }  
+  else { // CPHA 0 - data changes on trailing edge (slave clocks in data on leading edge)
+    data_return = 0;
+    for (i = 0; i < logical_channel[channel].num_bits; i ++) {
+      
+      if (data & bit_test)
+        *logical_channel[channel].mosi_set_reg = logical_channel[channel].mosi_bit_mask;
+      else  
+        *logical_channel[channel].mosi_clr_reg = logical_channel[channel].mosi_bit_mask;
+
+      data_return = data_return SHIFT 1;
+
+      delay(a); 
+      
+      *logical_channel[channel].clock_active_register = logical_channel[channel].sck_bit_mask; 
+      
+      data_return |= MISO_read SHIFT logical_channel[channel].num_bits;
+      
+      data = data SHIFT 1;
+      
+      delay(b);
+
+      *logical_channel[channel].clock_inactive_register = logical_channel[channel].sck_bit_mask;
+      
+    }  
+    return data_return;  
+  }
+} // sw_SPI_send
+
+
+void HAL_SW_SPI_transfer(uint8_t channel, const uint8_t *buffer_write, uint8_t *buffer_read, uint32_t length) {
+  uint32_t i;
+  if (buffer_write = nullptr) {
+    for (uint32_t i; i < length; i++) { buffer_read[i] = sw_SPI_send(channel, 0xFF);}
+  }
+  else {
+    if (buffer_read = nullptr) { 
+      for (uint32_t i; i < length; i++) {sw_SPI_send(channel, buffer_write[i]);}
+    }  
+  }  
+  else
+    for (uint32_t i; i < length; i++) {buffer_read[i] = sw_SPI_send(channel, buffer_write[i]);}
+  
+} // HAL_SW_SPI_transfer  
+
+}  // SPI
+}  // HAL
 
 extern "C" void SSP0_IRQHandler(void) {
-  HAL::SPI::ssp_irq_handler(0);
+  HAL::SPI::ssp_irq_handler(1);
 }
 
 extern "C" void SSP1_IRQHandler(void) {
-  HAL::SPI::ssp_irq_handler(1);
+  HAL::SPI::ssp_irq_handler(2);
 }
 
 
