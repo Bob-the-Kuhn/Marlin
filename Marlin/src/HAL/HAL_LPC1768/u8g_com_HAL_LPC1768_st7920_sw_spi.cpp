@@ -65,13 +65,28 @@
   #define LPC_PIN(pin)            (1UL << pin)
   #define LPC_GPIO(port)          ((volatile LPC_GPIO_TypeDef *)(LPC_GPIO0_BASE + LPC_PORT_OFFSET * port))
 
+  #include "../SPI_manager_api.h"
+
+  uint8_t LCD_channel = HAL::SPI::create_logical_spi_channel(1, -1, 1, 1000000, 3);  // HW SPI, no chip select, spi mode 0
+    // mode 0  6MHz: some garbage, 4MHz missing top line & middle, 550K still missing lines, 500K perfect
+    // mode 1  same as mode 0
+    // mode 2  500K - nothing
+    // mode 3  4M (3.2 actual) perfect, 5M (4.0 actual) some garbage
+   
+    // 1MHz - 40mS  4% CPU load
+    // 2MHz - 31mS  3% CPU load
+    // 4MHz - 26mS
+    
 
   uint8_t SCK_pin_ST7920_HAL, SCK_port_ST7920_HAL, MOSI_pin_ST7920_HAL_HAL, MOSI_port_ST7920_HAL;
 
 
   #define SPI_SPEED 4  //20: 200KHz 5:750KHz 4:1MHz 3:1.5MHz 2:3-4MHz
 
-  static void spiSend_sw(uint8_t val)
+  static void spiSend_sw(uint8_t val) {
+    HAL::SPI::write(LCD_channel,val);
+  }
+/*
   {
     for (uint8_t i = 0; i < 8; i++) {
 
@@ -103,6 +118,7 @@
       val = val << 1;
     }
   }
+*/
 
   static uint8_t rs_last_state = 255;
 
@@ -128,30 +144,36 @@
     spiSend_sw(val << 4);
   }
 
-
   uint8_t u8g_com_HAL_LPC1768_ST7920_sw_spi_fn(u8g_t *u8g, uint8_t msg, uint8_t arg_val, void *arg_ptr)
   {
     switch(msg)
     {
       case U8G_COM_MSG_INIT:
+/*
         #define LPC1768_PIN_PORT(pin) ((uint8_t)((pin >> 5) & 0b111))
         #define LPC1768_PIN_PIN(pin) ((uint8_t)(pin & 0b11111))
+
         SCK_pin_ST7920_HAL = LPC1768_PIN_PIN(u8g->pin_list[U8G_PI_SCK]);
         SCK_port_ST7920_HAL = LPC1768_PIN_PORT(u8g->pin_list[U8G_PI_SCK]);
         MOSI_pin_ST7920_HAL_HAL = LPC1768_PIN_PIN(u8g->pin_list[U8G_PI_MOSI]);
         MOSI_port_ST7920_HAL = LPC1768_PIN_PORT(u8g->pin_list[U8G_PI_MOSI]);
-
+*/
         u8g_SetPILevel(u8g, U8G_PI_CS, 0);
         u8g_SetPIOutput(u8g, U8G_PI_CS);
+/*
         u8g_SetPILevel(u8g, U8G_PI_SCK, 0);
         u8g_SetPIOutput(u8g, U8G_PI_SCK);
         u8g_SetPILevel(u8g, U8G_PI_MOSI, 0);
         u8g_SetPIOutput(u8g, U8G_PI_MOSI);
         u8g_Delay(5);
+*/
+
+
         u8g->pin_list[U8G_PI_A0_STATE] = 0;       /* inital RS state: command mode */
         break;
 
       case U8G_COM_MSG_STOP:
+
         break;
 
       case U8G_COM_MSG_RESET:
@@ -163,7 +185,8 @@
         break;
 
       case U8G_COM_MSG_CHIP_SELECT:
-        if (U8G_PIN_NONE != u8g->pin_list[U8G_PI_CS]) u8g_SetPILevel(u8g, U8G_PI_CS, arg_val);  //note: the st7920 has an active high chip select
+        if (U8G_PIN_NONE != u8g->pin_list[U8G_PI_CS])
+          u8g_SetPILevel(u8g, U8G_PI_CS, arg_val);  //note: the st7920 has an active high chip select
         break;
 
       case U8G_COM_MSG_WRITE_BYTE:

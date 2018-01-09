@@ -40,6 +40,11 @@
 
 #include "../Marlin.h"
 
+#include "../HAL/SPI_manager_api.h"
+
+uint8_t SD_spi_chan = HAL::SPI::create_logical_spi_channel(1, -1, 1, 125000, 0);  // HW SPI, no chip select, spi mode 0
+
+
 #if ENABLED(SD_CHECK_AND_RETRY)
   #ifdef FAST_CRC
     static const uint8_t crctab7[] PROGMEM = {
@@ -105,25 +110,25 @@ uint8_t Sd2Card::cardCommand(uint8_t cmd, uint32_t arg) {
 
   // send message
   for (uint8_t k = 0; k < 6; k++ )
-    spiSend( d[k] );
+    HAL::SPI::write(SD_spi_chan,  d[k] );
 
 #else
   // send command
-  spiSend(cmd | 0x40);
+  HAL::SPI::write(SD_spi_chan, cmd | 0x40);
 
   // send argument
   for( int8_t i = 3; i >= 0; i-- )
-    spiSend( pa[i] );
+    HAL::SPI::write(SD_spi_chan,  pa[i] );
 
   // send CRC - correct for CMD0 with arg zero or CMD8 with arg 0X1AA
-  spiSend( cmd == CMD0 ? 0X95 : 0X87 );
+  HAL::SPI::write(SD_spi_chan,  cmd == CMD0 ? 0X95 : 0X87 );
 #endif
 
   // skip stuff byte for stop read
-  if (cmd == CMD12) spiRec();
+  if (cmd == CMD12) HAL::SPI::read(SD_spi_chan);
 
   // wait for response
-  for (uint8_t i = 0; ((status_ = spiRec()) & 0x80) && i != 0xFF; i++) { /* Intentionally left empty */ }
+  for (uint8_t i = 0; ((status_ = HAL::SPI::read(SD_spi_chan)) & 0x80) && i != 0xFF; i++) { /* Intentionally left empty */ }
   return status_;
 }
 
@@ -159,11 +164,11 @@ void Sd2Card::chipDeselect() {
   digitalWrite(chipSelectPin_, HIGH);
 
   // insure MISO goes high impedance
-  spiSend( 0xFF );
+  HAL::SPI::write(SD_spi_chan,  0xFF );
 }
 
 void Sd2Card::chipSelect() {
-  spiInit(spiRate_);
+  HAL::SPI::set_frequency(SD_spi_chan, spiRate_);
   digitalWrite(chipSelectPin_, LOW);
 }
 
@@ -248,15 +253,16 @@ bool Sd2Card::init(uint8_t sckRateID, pin_t chipSelectPin) {
   #endif
 
   // set pin modes
-//todo: should use chipSelectPin ?
-  spiBegin();
+
 
   // set SCK rate for initialization commands
   spiRate_ = SPI_SD_INIT_RATE;
-  spiInit(spiRate_);
+  HAL::SPI::set_frequency(SD_spi_chan, spiRate_);
+
+  //todo: should use chipSelectPin ?
 
   // must supply min of 74 clock cycles with CS high.
-  for (uint8_t i = 0; i < 10; i++) spiSend(0xFF);
+  for (uint8_t i = 0; i < 10; i++) HAL::SPI::write(SD_spi_chan, 0xFF);
 
   // command to go idle in SPI mode
   while ((status_ = cardCommand(CMD0, 0)) != R1_IDLE_STATE) {
@@ -281,7 +287,7 @@ bool Sd2Card::init(uint8_t sckRateID, pin_t chipSelectPin) {
   }
 
     // only need last byte of r7 response
-    for (uint8_t i = 0; i < 4; i++) status_ = spiRec();
+    for (uint8_t i = 0; i < 4; i++) status_ = HAL::SPI::read(SD_spi_chan);
     if (status_ == 0xAA) {
       type(SD_CARD_TYPE_SD2);
       break;
@@ -308,9 +314,9 @@ bool Sd2Card::init(uint8_t sckRateID, pin_t chipSelectPin) {
       error(SD_CARD_ERROR_CMD58);
       goto FAIL;
     }
-    if ((spiRec() & 0xC0) == 0xC0) type(SD_CARD_TYPE_SDHC);
+    if ((HAL::SPI::read(SD_spi_chan) & 0xC0) == 0xC0) type(SD_CARD_TYPE_SDHC);
     // discard rest of ocr - contains allowed voltage range
-    for (uint8_t i = 0; i < 3; i++) spiRec();
+    for (uint8_t i = 0; i < 3; i++) HAL::SPI::read(SD_spi_chan);
   }
   chipDeselect();
 
@@ -434,7 +440,7 @@ bool Sd2Card::readData(uint8_t* dst) {
 bool Sd2Card::readData(uint8_t* dst, uint16_t count) {
   // wait for start block token
   uint16_t t0 = millis();
-  while ((status_ = spiRec()) == 0xFF) {
+  while ((status_ = HAL::SPI::read(SD_spi_chan)) == 0xFF) {
     if (((uint16_t)millis() - t0) > SD_READ_TIMEOUT) {
       error(SD_CARD_ERROR_READ_TIMEOUT);
       goto FAIL;
@@ -445,11 +451,11 @@ bool Sd2Card::readData(uint8_t* dst, uint16_t count) {
     goto FAIL;
   }
   // transfer data
-  spiRead(dst, count);
+  HAL::SPI::read(SD_spi_chan, dst, count);
 
 #if ENABLED(SD_CHECK_AND_RETRY)
   {
-    uint16_t recvCrc = (spiRec() << 8) | spiRec();
+    uint16_t recvCrc = (HAL::SPI::read(SD_spi_chan) << 8) | HAL::SPI::read(SD_spi_chan);
     if (recvCrc != CRC_CCITT(dst, count)) {
       error(SD_CARD_ERROR_READ_CRC);
       goto FAIL;
@@ -457,8 +463,8 @@ bool Sd2Card::readData(uint8_t* dst, uint16_t count) {
   }
 #else
   // discard CRC
-  spiRec();
-  spiRec();
+  HAL::SPI::read(SD_spi_chan);
+  HAL::SPI::read(SD_spi_chan);
 #endif
   chipDeselect();
   return true;
@@ -539,7 +545,7 @@ bool Sd2Card::setSckRate(uint8_t sckRateID) {
 // wait for card to go not busy
 bool Sd2Card::waitNotBusy(uint16_t timeoutMillis) {
   uint16_t t0 = millis();
-  while (spiRec() != 0xFF)
+  while (HAL::SPI::read(SD_spi_chan) != 0xFF)
     if (((uint16_t)millis() - t0) >= timeoutMillis) return false;
 
   return true;
@@ -567,7 +573,7 @@ bool Sd2Card::writeBlock(uint32_t blockNumber, const uint8_t* src) {
     goto FAIL;
   }
   // response is r2 so get and check two bytes for nonzero
-  if (cardCommand(CMD13, 0) || spiRec()) {
+  if (cardCommand(CMD13, 0) || HAL::SPI::read(SD_spi_chan)) {
     error(SD_CARD_ERROR_WRITE_PROGRAMMING);
     goto FAIL;
   }
@@ -603,11 +609,13 @@ bool Sd2Card::writeData(uint8_t token, const uint8_t* src) {
 #else  // ENABLED(SD_CHECK_AND_RETRY)
   uint16_t crc = 0xFFFF;
 #endif  // ENABLED(SD_CHECK_AND_RETRY)
-  spiSendBlock( token, src );
-  spiSend( crc >> 8 );
-  spiSend( crc & 0XFF );
+  HAL::SPI::write(SD_spi_chan, token);
+  HAL::SPI::write(SD_spi_chan, src , 512);
 
-  status_ = spiRec();
+  HAL::SPI::write(SD_spi_chan,  crc >> 8 );
+  HAL::SPI::write(SD_spi_chan,  crc & 0XFF );
+
+  status_ = HAL::SPI::read(SD_spi_chan);
   if ((status_ & DATA_RES_MASK) != DATA_RES_ACCEPTED) {
     error(SD_CARD_ERROR_WRITE);
     chipDeselect();
@@ -654,7 +662,7 @@ bool Sd2Card::writeStart(uint32_t blockNumber, uint32_t eraseCount) {
 bool Sd2Card::writeStop() {
   chipSelect();
   if (!waitNotBusy(SD_WRITE_TIMEOUT)) goto FAIL;
-  spiSend(STOP_TRAN_TOKEN);
+  HAL::SPI::write(SD_spi_chan, STOP_TRAN_TOKEN);
   if (!waitNotBusy(SD_WRITE_TIMEOUT)) goto FAIL;
   chipDeselect();
   return true;
