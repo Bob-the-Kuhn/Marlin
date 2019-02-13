@@ -125,7 +125,6 @@ void Stepper::digipot_current(const uint8_t driver, const int16_t current) {
 volatile uint32_t PWM_ISR1_STATUS, PWM_ISR2_STATUS;
 
 void PWM_Handler() {
-WRITE( 39,1);
   PWM_ISR1_STATUS = PWM->PWM_ISR1;
   PWM_ISR2_STATUS = PWM->PWM_ISR2;
   if (PWM_ISR1_STATUS & PWM_IER1_CHID0) {                           // CHAN_0 interrupt
@@ -140,7 +139,6 @@ WRITE( 39,1);
     if (PWM_ISR2_STATUS & PWM_IER2_CMPM3)  *ISR_table[2].clr_register = ISR_table[2].write_mask;   // set Z to inactive
     if (PWM_ISR2_STATUS & PWM_IER2_CMPM4)  *ISR_table[3].clr_register = ISR_table[3].write_mask;   // set E to inactive
   }
-WRITE( 39,0);
   return;
 }
 
