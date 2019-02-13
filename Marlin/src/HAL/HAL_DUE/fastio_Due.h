@@ -98,7 +98,7 @@
     uint32_t mask = MASK(G2_g_APinDescription[IO].ulPeripheralId); \
     if ((PMC->PMC_PCSR0 & mask) != (mask)) PMC->PMC_PCER0 = mask; \
     volatile Pio* port = (DIO ## IO ## _WPORT); \
-    const uint32_t mask = MASK(DIO ## IO ## _PIN); \
+    mask = MASK(DIO ## IO ## _PIN); \
     if (_READ(IO)) port->PIO_SODR = mask; \
     else port->PIO_CODR = mask; \
     port->PIO_IDR = mask; \

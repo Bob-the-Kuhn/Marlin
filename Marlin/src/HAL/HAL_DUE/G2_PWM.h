@@ -21,11 +21,14 @@
  */
 
 /**
- * This module is based on the LPC1768_PWM.h file from PR #7500.
- * It is hardwired for the PRINTRBOARD_G2 Motor Current needs.
+ * This module is stripped down version of the LPC1768_PWM.h file from
+ * PR #7500. It is hardwired for the PRINTRBOARD_G2 Motor Current needs.
  */
 
 #include "../../inc/MarlinConfigPre.h"
+#include "../../module/stepper.h"
+//C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\module\stepper.h
+//C:\Users\bobku\Documents\GitHub\Marlin-Bob-2\Marlin\src\HAL\HAL_DUE\G2_PWM.h
 
 #define PWM_PERIOD_US  100  // base repetition rate in micro seconds
 
@@ -56,7 +59,7 @@ extern volatile uint32_t *SODR_A, *SODR_B, *CODR_A, *CODR_B;
 
 extern PWM_map ISR_table[NUM_PWMS];
 
-extern volatile uint8_t PWM1_ISR_index = 0;
+extern uint32_t motor_current_setting[3];
 
 #define IR_BIT(p) (WITHIN(p, 0, 3) ? (p) : (p) + 4)
 #define COPY_ACTIVE_TABLE() do{ for (uint8_t i = 0; i < 6 ; i++) work_table[i] = active_table[i]; }while(0)
@@ -68,8 +71,6 @@ extern volatile uint8_t PWM1_ISR_index = 0;
 #define MR0_MARGIN 200        // if channel value too close to MR0 the system locks up
 
 extern bool PWM_table_swap;   // flag to tell the ISR that the tables have been swapped
-
-////////////////////////////////////////////////////////////////////////////////
 
 #define HAL_G2_PWM_ISR  void PWM_Handler()
 

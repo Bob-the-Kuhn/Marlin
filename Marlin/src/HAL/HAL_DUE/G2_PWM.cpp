@@ -21,32 +21,26 @@
  */
 
 /**
- * The class Servo uses the PWM class to implement its functions.
- *
- * The PWM1 module is only used to generate interrups at specified times. It
+ * The PWM module is only used to generate interrupts at specified times. It
  * is NOT used to directly toggle pins. The ISR writes to the pin assigned to
- * that interrupt
+ * that interrupt.
  *
- * All PWMs use the same repetition rate - 20mS because that's the normal servo rate
+ * All PWMs use the same repetition rate.  The G2 needs about 10KHz min in order to
+ * not have obvious ripple on the Vref signals.
  *
  * The data structures are setup to minimize the computation done by the ISR which
- * minimizes ISR execution time.  Execution times are 1.7 to 1.9 microseconds.
+ * minimizes ISR execution time.  Execution times are 0.8 to 1.1 microseconds.
  *
- * Two tables are used.  active_table is used by the ISR.  Changes to the table are
- * are done by copying the active_table into the work_table, updating the work_table
- * and then swapping the two tables.  Swapping is done by manipulating pointers.
+ * FIve PWM interrupt sources are used.  Channel 0 sets the base period.  All Vref
+ * signals are set active when this counter overflows and resets to zero.  The compare
+ * values in channels 1-4 are set to give the desired duty cycle for that Vref pin.
+ * When counter 0 matches the compare value then that channel generates an interrupt.
+ * The ISR checks the source of the interrupt and sets the corresponding pin inactive.
  *
- * Immediately after the swap the ISR uses the work_table until the start of the
- * next 20mS cycle. During this transition the "work_table" is actually the table
- * that was being used before the swap.  The "active_table" contains the data that
- * will start being used at the start of the next 20mS period.  This keeps the pins
- * well behaved during the transition.
- *
- * The ISR's priority is set to the maximum otherwise other ISRs can cause considerable
- * jitter in the PWM high time.
+ * Some jitter in the Vref signal is OK so the interrupt priority is left at its default value.
  */
 
-#include "../../inc/MarlinConfigPre.h"
+#include "../../inc/MarlinConfig.h"
 
 #if MB(PRINTRBOARD_G2)
 
@@ -58,9 +52,6 @@ volatile uint32_t *SODR_A = &PIOA->PIO_SODR,
                   *CODR_B = &PIOB->PIO_CODR;
 
 PWM_map ISR_table[NUM_PWMS] = PWM_MAP_INIT;
-
-volatile uint8_t PWM1_ISR_index = 0;
-bool PWM_table_swap = false;  // flag to tell the ISR that the tables have been swapped
 
 void Stepper::digipot_init() {
 
@@ -85,9 +76,9 @@ void Stepper::digipot_init() {
   PWM->PWM_CH_NUM[3].PWM_CMR = 0b1011;                    // set channel 3 to Clock A input & to left aligned
   PWM->PWM_CH_NUM[4].PWM_CMR = 0b1011;                    // set channel 4 to Clock A input & to left aligned
 
-  PWM->PWM_CH_NUM[0].PWM_CPRD = PWM_PERIOD_US;                    // set channel 0 Period
+  PWM->PWM_CH_NUM[0].PWM_CPRD = PWM_PERIOD_US;            // set channel 0 Period
 
-  PWM->PWM_IER2 = PWM_IER1_CHID0;                          // generate interrupt when counter0 overflows
+  PWM->PWM_IER2 = PWM_IER1_CHID0;                         // generate interrupt when counter0 overflows
   PWM->PWM_IER2 = PWM_IER2_CMPM0 | PWM_IER2_CMPM1 | PWM_IER2_CMPM2 | PWM_IER2_CMPM3 | PWM_IER2_CMPM4;        // generate interrupt on compare event
 
   PWM->PWM_CMP[1].PWM_CMPV = 0x010000000LL | G2_VREF_COUNT(G2_VREF(motor_current_setting[0]));   // interrupt when counter0 == CMPV - used to set Motor 1 PWM inactive
@@ -134,6 +125,7 @@ void Stepper::digipot_current(const uint8_t driver, const int16_t current) {
 volatile uint32_t PWM_ISR1_STATUS, PWM_ISR2_STATUS;
 
 void PWM_Handler() {
+WRITE( 39,1);
   PWM_ISR1_STATUS = PWM->PWM_ISR1;
   PWM_ISR2_STATUS = PWM->PWM_ISR2;
   if (PWM_ISR1_STATUS & PWM_IER1_CHID0) {                           // CHAN_0 interrupt
@@ -148,6 +140,7 @@ void PWM_Handler() {
     if (PWM_ISR2_STATUS & PWM_IER2_CMPM3)  *ISR_table[2].clr_register = ISR_table[2].write_mask;   // set Z to inactive
     if (PWM_ISR2_STATUS & PWM_IER2_CMPM4)  *ISR_table[3].clr_register = ISR_table[3].write_mask;   // set E to inactive
   }
+WRITE( 39,0);
   return;
 }
 
