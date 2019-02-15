@@ -59,7 +59,19 @@
   //#define FIL_RUNOUT2_PIN 21  // PB13
 #endif
 
-// PB12 NeoPixel pin
+
+//
+// LED defines
+//
+//#define NEOPIXEL_TYPE   NEO_GRBW  // NEO_GRBW / NEO_GRB - four/three channel driver type (defined in Adafruit_NeoPixel.h)
+//#define NEOPIXEL_PIN    20        // LED driving pin on motherboard
+//#define NEOPIXEL_PIXELS 3         // Number of LEDs in the strip
+
+
+
+//#define SDA0 20 // PB12 NeoPixel pin I2C data
+//#define SCL0 21 // PB13              I2C clock
+
 // D0_12 #REF! (INDICATOR_LED)
 // B28 JTAG-CLK
 // B31 JTAG_TMS /SWD_DIO
@@ -70,6 +82,10 @@
 //A15 UART_CTS
 //PB2 Unassigned
 //PB4 to PB9 Unassigned
+//#define UART_RX_PIN         0   // PA8    "RX0"
+//#define UART_TX_PIN         1   // PA9    "TX0"
+//#define UART_RTS_PIN       23   // PA14
+//#define UART_CTS_PIN       24   // PA15
 
 //
 // Steppers
@@ -138,10 +154,10 @@
 
 /////////////////////////////////////////////////////////
 
-#define MISO_PIN            0   // set to unused pins for now
-#define MOSI_PIN            1   // set to unused pins for now
-#define SCK_PIN             2   // set to unused pins for now
-#define SDSS                3   // set to unused pins for now
+#define MISO_PIN           68   // set to unused pins for now
+#define MOSI_PIN           69   // set to unused pins for now
+#define SCK_PIN            70   // set to unused pins for now
+#define SDSS               71   // set to unused pins for now
 
 /**
  * G2 uses 8 pins that are not available in the DUE environment:
