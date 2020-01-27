@@ -25,9 +25,7 @@
  * MKS SBASE pin assignments
  */
 
-#if defined(MKS_HAS_LPC1769) && !defined(MCU_LPC1769)
-  #error "Oops! Make sure you have the LPC1769 environment selected in your IDE."
-#elif !defined(MKS_HAS_LPC1769) && !defined(MCU_LPC1768)
+#ifndef MCU_LPC1768
   #error "Oops! Make sure you have the LPC1768 environment selected in your IDE."
 #endif
 
@@ -46,23 +44,23 @@
 //
 // Servos
 //
-#define SERVO0_PIN         P1_23   // J8-3 (low jitter)
-#define SERVO1_PIN         P2_12   // J8-4
+//#define SERVO0_PIN         P1_23   // J8-3 (low jitter)
+//#define SERVO1_PIN         P2_12   // J8-4
 #define SERVO2_PIN         P2_11   // J8-5
 #define SERVO3_PIN         P4_28   // J8-6
 
 //
 // Limit Switches - Not Interrupt Capable
 //
-#define X_MIN_PIN          P1_24   // 10k pullup to 3.3V, 1K series
+//#define X_MIN_PIN          P1_24   // 10k pullup to 3.3V, 1K series
 #define X_MAX_PIN          P1_25   // 10k pullup to 3.3V, 1K series
-#define Y_MIN_PIN          P1_26   // 10k pullup to 3.3V, 1K series
+//#define Y_MIN_PIN          P1_26   // 10k pullup to 3.3V, 1K series
 #define Y_MAX_PIN          P1_27   // 10k pullup to 3.3V, 1K series
-#define Z_MIN_PIN          P1_28   // The original Mks Sbase DIO19 has a 10k pullup to 3.3V or 5V, 1K series, so when using a Zprobe we must use DIO41 (J8 P1.22)
+//#define Z_MIN_PIN          P1_28   // The original Mks Sbase DIO19 has a 10k pullup to 3.3V or 5V, 1K series, so when using a Zprobe we must use DIO41 (J8 P1.22)
 #define Z_MAX_PIN          P1_29   // 10k pullup to 3.3V, 1K series
 
 #ifndef Z_MIN_PROBE_PIN
-  #define Z_MIN_PROBE_PIN  P4_28   // Connector J8
+  #define Z_MIN_PROBE_PIN  P1_23   // Connector J8
 #endif
 
 //
@@ -92,9 +90,9 @@
 // Temperature Sensors
 // 3.3V max when defined as an analog input
 //
-#define TEMP_BED_PIN        P0_23_A0   // A0 (TH1)
-#define TEMP_0_PIN          P0_24_A1   // A1 (TH2)
-#define TEMP_1_PIN          P0_25_A2   // A2 (TH3)
+#define TEMP_BED_PIN        P0_24_A1   // A1 (TH2)
+#define TEMP_0_PIN          P0_23_A0   // A0 (TH1)
+#define TEMP_CHAMBER_PIN    P0_25_A2   // A2 (TH3)
 #define TEMP_2_PIN          P0_26_A3   // A3 (TH4)
 
 //
@@ -103,6 +101,7 @@
 #define HEATER_BED_PIN     P2_05
 #define HEATER_0_PIN       P2_07
 #define HEATER_1_PIN       P2_06
+#define HEATER_CHAMBER_PIN P1_22
 #ifndef FAN_PIN
   #define FAN_PIN          P2_04
 #endif
@@ -143,6 +142,10 @@
 // Misc. Functions
 //
 #define PS_ON_PIN          P0_25   // TH3 Connector
+#define FIL_RUNOUT_PIN     P0_17   // Filament rotary detector
+
+#define M672_MOD_PIN           P2_11   // X_MIN_PIN  (Z-probe connector MOD pin)
+
 
 //
 // Ethernet pins
@@ -151,7 +154,7 @@
   #define ENET_MDIO        P1_17   // J12-4
   #define ENET_RX_ER       P1_14   // J12-6
   #define ENET_RXD1        P1_10   // J12-8
-#endif
+  #endif
 
 #define ENET_MOC           P1_16   // J12-3
 #define REF_CLK            P1_15   // J12-5
@@ -230,7 +233,7 @@
     #define DOGLCD_SCK     SCK_PIN
     #define DOGLCD_MOSI    MOSI_PIN
   #endif
-
+//  #define KILL_PIN         P2_12
   #if ENABLED(FYSETC_MINI_12864)
     /**
      * The FYSETC display can NOT use the SCK and MOSI pins on EXP2, so a
