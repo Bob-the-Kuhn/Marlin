@@ -145,6 +145,7 @@
 #define FIL_RUNOUT_PIN     P0_17   // Filament rotary detector
 
 #define M672_MOD_PIN           P2_11   // X_MIN_PIN  (Z-probe connector MOD pin)
+#define SMART_EFFECTOR_MOD_PIN  M672_MOD_PIN
 
 
 //
