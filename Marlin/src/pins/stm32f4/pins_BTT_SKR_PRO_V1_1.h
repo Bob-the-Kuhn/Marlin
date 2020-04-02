@@ -176,7 +176,9 @@
 #define HEATER_BED_PIN                      PD12  // Hotbed
 #define FAN_PIN                             PC8   // Fan0
 #define FAN1_PIN                            PE5   // Fan1
-#define FAN2_PIN                            PE6   // Fan2
+#define FAN2_PIN                            PE6   //
+
+#define E0_AUTO_FAN_PIN                     FAN1_PIN
 
 //
 // Misc. Functions
