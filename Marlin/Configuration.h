@@ -736,18 +736,20 @@
  * Override with M92
  *                                      X, Y, Z, E0 [, E1[, E2...]]
  */
-#define DEFAULT_AXIS_STEPS_PER_UNIT   {16*24.8139,16*24.8139,256*24.8139,32*391}  // 256 microsteps on E & Z, 16 on X & Y
+#define DEFAULT_AXIS_STEPS_PER_UNIT   {16*24.8139,16*24.8139,16*24.8139,32*391}  // 256 microsteps on E & Z, 16 on X & Y
 
 /**
  * Default Max Feed Rate (mm/s)
  * Override with M203
  *                                      X, Y, Z, E0 [, E1[, E2...]]
  */
-#define DEFAULT_MAX_FEEDRATE         {35, 35, 25, 33}
+//#define DEFAULT_MAX_FEEDRATE         {35, 35, 25, 33}
+#define DEFAULT_MAX_FEEDRATE         {14, 14, 14, 5}
 
 //#define LIMITED_MAX_FR_EDITING        // Limit edit via M203 or LCD to DEFAULT_MAX_FEEDRATE * 2
 #if ENABLED(LIMITED_MAX_FR_EDITING)
-  #define MAX_FEEDRATE_EDIT_VALUES    { 600, 600, 10, 50 } // ...or, set your own edit limits
+ // #define MAX_FEEDRATE_EDIT_VALUES    { 600, 600, 10, 50 } // ...or, set your own edit limits
+  #define MAX_FEEDRATE_EDIT_VALUES    { 14, 14, 14, 5 } // ...or, set your own edit limits
 #endif
 
 /**
@@ -1070,13 +1072,13 @@
 //#define INVERT_Z_DIR false   // positive is towards the motor A4988
 //#define INVERT_X_DIR false   // positive is away from the motor  STSPIN820
 //#define INVERT_Y_DIR false   // positive is towards the motor  STSPIN820
-#define INVERT_Z_DIR true    // positive is towards the motor  STSPIN820
+#define INVERT_Z_DIR false    // positive is towards the motor  STSPIN820
 
 
 // @section extruder
 
 // For direct drive extruder v9 set to true, for geared extruder set to false.
-#define INVERT_E0_DIR false
+#define INVERT_E0_DIR true
 #define INVERT_E1_DIR false
 #define INVERT_E2_DIR false
 #define INVERT_E3_DIR false
@@ -1377,7 +1379,7 @@
 #endif
 
 // Homing speeds (mm/m)
-#define HOMING_FEEDRATE_XY (50*60)
+#define HOMING_FEEDRATE_XY (20*60)
 #define HOMING_FEEDRATE_Z  (20*60)
 
 // Validate that endstops are triggered on homing moves
