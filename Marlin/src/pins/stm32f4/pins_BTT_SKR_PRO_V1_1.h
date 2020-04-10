@@ -31,7 +31,7 @@
 
 // Use one of these or SDCard-based Emulation will be used
 //#define SRAM_EEPROM_EMULATION                   // Use BackSRAM-based EEPROM emulation
-//#define FLASH_EEPROM_EMULATION                  // Use Flash-based EEPROM emulation
+#define FLASH_EEPROM_EMULATION                  // Use Flash-based EEPROM emulation
 
 //
 // Servos
@@ -178,7 +178,7 @@
 #define FAN1_PIN                            PE5   // Fan1
 #define FAN2_PIN                            PE6   //
 
-#define E0_AUTO_FAN_PIN                     FAN1_PIN
+#define E0_AUTO_FAN_PIN                     PC9
 
 //
 // Misc. Functions

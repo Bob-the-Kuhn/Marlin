@@ -408,7 +408,7 @@
  *   998 : Dummy Table that ALWAYS reads 25°C or the temperature defined below.
  *   999 : Dummy Table that ALWAYS reads 100°C or the temperature defined below.
  */
-#define TEMP_SENSOR_0 110
+#define TEMP_SENSOR_0 51
 #define TEMP_SENSOR_1 0
 #define TEMP_SENSOR_2 0
 #define TEMP_SENSOR_3 0
@@ -736,7 +736,7 @@
  * Override with M92
  *                                      X, Y, Z, E0 [, E1[, E2...]]
  */
-#define DEFAULT_AXIS_STEPS_PER_UNIT   {16*24.8139,16*24.8139,16*24.8139,32*391}  // 256 microsteps on E & Z, 16 on X & Y
+#define DEFAULT_AXIS_STEPS_PER_UNIT   {16*24.8139,16*24.8139,256*24.8139,256*48.875}  // 16 microsteps on all
 
 /**
  * Default Max Feed Rate (mm/s)
@@ -744,7 +744,7 @@
  *                                      X, Y, Z, E0 [, E1[, E2...]]
  */
 //#define DEFAULT_MAX_FEEDRATE         {35, 35, 25, 33}
-#define DEFAULT_MAX_FEEDRATE         {14, 14, 14, 5}
+#define DEFAULT_MAX_FEEDRATE         {12, 12, 7, 5}
 
 //#define LIMITED_MAX_FR_EDITING        // Limit edit via M203 or LCD to DEFAULT_MAX_FEEDRATE * 2
 #if ENABLED(LIMITED_MAX_FR_EDITING)
@@ -758,7 +758,7 @@
  * Override with M201
  *                                      X, Y, Z, E0 [, E1[, E2...]]
  */
-#define DEFAULT_MAX_ACCELERATION      { 100, 100, 100, 100}
+#define DEFAULT_MAX_ACCELERATION      { 75, 75, 75, 75}
 
 //#define LIMITED_MAX_ACCEL_EDITING     // Limit edit via M201 or LCD to DEFAULT_MAX_ACCELERATION * 2
 #if ENABLED(LIMITED_MAX_ACCEL_EDITING)
@@ -773,9 +773,9 @@
  *   M204 R    Retract Acceleration
  *   M204 T    Travel Acceleration
  */
-#define DEFAULT_ACCELERATION          100    // X, Y, Z and E acceleration for printing moves
-#define DEFAULT_RETRACT_ACCELERATION  100    // E acceleration for retracts
-#define DEFAULT_TRAVEL_ACCELERATION   300    // X, Y, Z acceleration for travel (non printing) moves
+#define DEFAULT_ACCELERATION           75    // X, Y, Z and E acceleration for printing moves
+#define DEFAULT_RETRACT_ACCELERATION   75    // E acceleration for retracts
+#define DEFAULT_TRAVEL_ACCELERATION    75    // X, Y, Z acceleration for travel (non printing) moves
 
 /**
  * Default Jerk limits (mm/s)
@@ -964,7 +964,7 @@
  *
  * Specify a Probe position as { X, Y, Z }
  */
-#define NOZZLE_TO_PROBE_OFFSET { 32, 0, -3.4 }
+#define NOZZLE_TO_PROBE_OFFSET { 32, 0, -2.9}
 
 // Most probes should stay away from the edges of the bed, but
 // with NOZZLE_AS_PROBE this can be negative for a wider probing area.
@@ -988,8 +988,8 @@
  * A total of 2 does fast/slow probes with a weighted average.
  * A total of 3 or more adds more slow probes, taking the average.
  */
-#define MULTIPLE_PROBING 5
-#define EXTRA_PROBING    1
+//#define MULTIPLE_PROBING 5
+//#define EXTRA_PROBING    1
 
 /**
  * Z probes require clearance when deploying, stowing, and moving between
@@ -1005,12 +1005,12 @@
  * Example: `M851 Z-5` with a CLEARANCE of 4  =>  9mm from bed to nozzle.
  *     But: `M851 Z+1` with a CLEARANCE of 2  =>  2mm from bed to nozzle.
  */
-#define Z_CLEARANCE_DEPLOY_PROBE   50 // Z Clearance for Deploy/Stow
-#define Z_CLEARANCE_BETWEEN_PROBES 10 // Z Clearance between probe points
+#define Z_CLEARANCE_DEPLOY_PROBE   15 // Z Clearance for Deploy/Stow
+#define Z_CLEARANCE_BETWEEN_PROBES  5 // Z Clearance between probe points
 #define Z_CLEARANCE_MULTI_PROBE     5 // Z Clearance between multiple probes
 //#define Z_AFTER_PROBING           5 // Z position after probing is done
 
-#define Z_PROBE_LOW_POINT          -3 // Farthest distance below the trigger-point to go before stopping
+#define Z_PROBE_LOW_POINT          -10 // Farthest distance below the trigger-point to go before stopping
 
 // For M851 give a range for adjusting the Z probe offset
 #define Z_PROBE_OFFSET_RANGE_MIN -20
@@ -1107,16 +1107,16 @@
 // @section machine
 
 // The size of the print bed
-#define X_BED_SIZE 310
-#define Y_BED_SIZE 265
+#define X_BED_SIZE 305
+#define Y_BED_SIZE 260
 
 // Travel limits (mm) after homing, corresponding to endstop positions.
   #define X_MIN_POS -50        // G28 sets X position to this value after homing
   #define X_MAX_POS 400        // not used (homes towards other endstop)
   #define Y_MIN_POS -178       // not used (homes towards other endstop)
-  #define Y_MAX_POS 436        // G28 sets Y position to this value after homing
+  #define Y_MAX_POS 431        // G28 sets Y position to this value after homing
   #define Z_MIN_POS -500       // not used (homes towards other endstop)
-  #define Z_MAX_POS 284        // G28 sets Z position to this value after homing
+  #define Z_MAX_POS 299        // G28 sets Z position to this value after homing
 
 /**
  * Software Endstops
@@ -1220,7 +1220,7 @@
 //#define AUTO_BED_LEVELING_3POINT
 //#define AUTO_BED_LEVELING_LINEAR
 //#define AUTO_BED_LEVELING_BILINEAR
-//#define AUTO_BED_LEVELING_UBL
+#define AUTO_BED_LEVELING_UBL
 //#define MESH_BED_LEVELING
 
 /**
@@ -1305,7 +1305,7 @@
   #define UBL_MESH_EDIT_MOVES_Z     // Sophisticated users prefer no movement of nozzle
   #define UBL_SAVE_ACTIVE_ON_M500   // Save the currently active mesh in the current slot on M500
 
-  //#define UBL_Z_RAISE_WHEN_OFF_MESH 2.5 // When the nozzle is off the mesh, this value is used
+  #define UBL_Z_RAISE_WHEN_OFF_MESH 20 // When the nozzle is off the mesh, this value is used
                                           // as the Z-Height correction value.
 
 #elif ENABLED(MESH_BED_LEVELING)
@@ -1679,7 +1679,7 @@
  * Enable one of the following items for a slower SPI transfer speed.
  * This may be required to resolve "volume init" errors.
  */
-//#define SPI_SPEED SPI_HALF_SPEED
+#define SPI_SPEED SPI_HALF_SPEED
 //#define SPI_SPEED SPI_QUARTER_SPEED
 //#define SPI_SPEED SPI_EIGHTH_SPEED
 
