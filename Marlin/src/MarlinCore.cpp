@@ -1160,6 +1160,10 @@ void setup() {
   marlin_state = MF_RUNNING;
 
   SETUP_LOG("setup() completed.");
+
+
+OUT_WRITE(ESP_WIFI_MODULE_ENABLE_PIN,1);
+//OUT_WRITE(ESP_WIFI_MODULE_RESET_PIN,1);
 }
 
 /**

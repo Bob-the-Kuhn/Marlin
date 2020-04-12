@@ -190,9 +190,10 @@
 
 //
 // Onboard SD card
-//   NOT compatible with LCD
+//   must use soft SPI becuase Marlin default
+//   hardware SPI is tied to LCD EXP1 & EXP2
 //
-#if SDCARD_CONNECTION == ONBOARD && !HAS_SPI_LCD
+#if SDCARD_CONNECTION == ONBOARD
   #define SOFTWARE_SPI                            // Use soft SPI for onboard SD
   #define SDSS                              PA4
   #define SCK_PIN                           PA5
@@ -284,3 +285,15 @@
   #endif
 
 #endif // HAS_SPI_LCD
+
+
+#define ESP_WIFI_MODULE_COM 6
+#define ESP_WIFI_MODULE_BAUDRATE 115200     // use BAUDRATE ?  would guarantee same baud rate as SERIAL_PORT & SERIAL_PORT_2
+#define ESP_WIFI_MODULE_RESET_PIN           PG0
+
+#define ESP_WIFI_MODULE_ENABLE_PIN          PG1
+
+//WIFI_EN     PG1   // must be high for module to run
+//WIFI_RESET  PG0   //  leave as unused (OK to leave floating)
+//WIFI_GPIO2 PF15   //  leave as unused (OK to leave floating
+//WIFI_GPIO0 PF14   //  leave as unused (OK to leave floating
