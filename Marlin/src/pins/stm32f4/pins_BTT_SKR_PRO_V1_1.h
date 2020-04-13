@@ -199,8 +199,6 @@
   #define SCK_PIN                           PA5
   #define MISO_PIN                          PA6
   #define MOSI_PIN                          PB5
-#else
-  #define SDSS                              PB12
 #endif
 
 /**
@@ -220,6 +218,9 @@
 #if HAS_SPI_LCD
   #define BEEPER_PIN                        PG4
   #define BTN_ENC                           PA8
+  #if SDCARD_CONNECTION == LCD
+    #define SDSS                            PB12    // Uses default hardware SPI for LCD's SD
+  #endif
 
   #if ENABLED(CR10_STOCKDISPLAY)
     #define LCD_PINS_RS                     PG6
@@ -286,14 +287,22 @@
 
 #endif // HAS_SPI_LCD
 
+//
+// WIFI
+//
 
-#define ESP_WIFI_MODULE_COM 6
-#define ESP_WIFI_MODULE_BAUDRATE 115200     // use BAUDRATE ?  would guarantee same baud rate as SERIAL_PORT & SERIAL_PORT_2
-#define ESP_WIFI_MODULE_RESET_PIN           PG0
+/**
+ *                         _____
+ *                     TX | 1 2 | GND              Enable PG1   //  must be high for module to run
+ *                 Enable | 3 4 | GPIO2            Reset  PG0   //  leave as unused (OK to leave floating)
+ *                  Reset | 5 6 | GPIO0            GPIO2  PF15  //  leave as unused (best to leave floating)
+ *                    3.3V| 7 8 | RX               GPIO0  PF14  //  leave as unused (best to leave floating)
+ *                          ￣￣
+ *                           W1
+ */
 
+#define ESP_WIFI_MODULE_COM 6              // must also set SERIAL_PORT or SERIAL_PORT_2 to this
+#define ESP_WIFI_MODULE_BAUDRATE BAUDRATE  //115200     // use BAUDRATE ?  would guarantee same baud rate as SERIAL_PORT & SERIAL_PORT_2
+#define ESP_WIFI_MODULE_RESET_PIN   -1
 #define ESP_WIFI_MODULE_ENABLE_PIN          PG1
 
-//WIFI_EN     PG1   // must be high for module to run
-//WIFI_RESET  PG0   //  leave as unused (OK to leave floating)
-//WIFI_GPIO2 PF15   //  leave as unused (OK to leave floating
-//WIFI_GPIO0 PF14   //  leave as unused (OK to leave floating

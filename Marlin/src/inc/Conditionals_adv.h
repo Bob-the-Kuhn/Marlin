@@ -290,3 +290,8 @@
     #define MAXIMUM_STEPPER_RATE 250000
   #endif
 #endif
+
+
+#define LCD          1
+#define ONBOARD      2
+#define CUSTOM_CABLE 3

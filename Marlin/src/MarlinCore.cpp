@@ -181,6 +181,9 @@
   #include "libs/L64XX/L64XX_Marlin.h"
 #endif
 
+void WIFI_init(void);
+
+
 const char NUL_STR[] PROGMEM = "",
            M112_KILL_STR[] PROGMEM = "M112 Shutdown",
            G28_STR[] PROGMEM = "G28",
@@ -911,6 +914,8 @@ void setup() {
     BOARD_INIT();
   #endif
 
+  WIFI_init();            // Init WIFI control lines (if defined)
+
   // Check startup - does nothing if bootloader sets MCUSR to 0
   byte mcu = HAL_get_reset_source();
   if (mcu &  1) SERIAL_ECHOLNPGM(STR_POWERUP);
@@ -1162,7 +1167,7 @@ void setup() {
   SETUP_LOG("setup() completed.");
 
 
-OUT_WRITE(ESP_WIFI_MODULE_ENABLE_PIN,1);
+//OUT_WRITE(ESP_WIFI_MODULE_ENABLE_PIN,1);
 //OUT_WRITE(ESP_WIFI_MODULE_RESET_PIN,1);
 }
 
